@@ -1,0 +1,93 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: journaling-app/package-lock.json
+        
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Install dependencies
+      working-directory: journaling-app
+      run: npm ci
+      
+    - name: Build web app
+      working-directory: journaling-app
+      run: npm run build
+      
+    - name: Sync Capacitor
+      working-directory: journaling-app
+      run: npx cap sync
+      
+    - name: Build Android APK
+      working-directory: journaling-app
+      run: npx cap build android
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: chaitan-app-release
+        path: journaling-app/android/app/build/outputs/apk/release/app-release.apk
+        
+    - name: Upload debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: chaitan-app-debug
+        path: journaling-app/android/app/build/outputs/apk/debug/app-debug.apk
+        
+    - name: Create Release
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          journaling-app/android/app/build/outputs/apk/release/app-release.apk
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          Android APK for Chaitan Journaling App
+          
+          ## Changes
+          - Automated build from GitHub Actions
+          - Built from commit: ${{ github.sha }}
+          
+          ## Installation
+          1. Download the APK file
+          2. Enable "Install from unknown sources" on your Android device
+          3. Install the APK
+          
+          ## Features
+          - Voice journaling with AI analysis
+          - Text journaling with rich editor
+          - Quick check-ins for mood tracking
+          - Wheel of Life assessment
+          - Personality insights (SoulMatrix)
+          - People and relationship tracking
+          - Financial insights
+          - Task management
+          - Weekly/monthly recaps
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

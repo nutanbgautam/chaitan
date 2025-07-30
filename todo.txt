@@ -1,0 +1,15 @@
+
+User should be able to update priority from profile page , select 1 to 7 for each priority and should be sequential priority 
+
+
+navigation bar to stay rigid below fixed and content box should be above navigation bar 
+
+structure of task, finance and people page 
+
+list overflows in mobile and fix that
+
+wheel of life weightage system and connected with each journal entry, how to use like soul matrix, maybe 24 hour?
+
+ask yourself feature in journal page 
+
+signup with google / signin with google functional
