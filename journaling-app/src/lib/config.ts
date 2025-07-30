@@ -21,6 +21,13 @@ export const config = {
     apiKey: process.env.OPENAI_API_KEY || 'your-openai-api-key-here',
   },
 
+  // Supabase Configuration
+  supabase: {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL || 'your-supabase-url-here',
+    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'your-supabase-anon-key-here',
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || 'your-supabase-service-key-here',
+  },
+
   // App Configuration
   app: {
     name: 'Chaitan Journaling App',

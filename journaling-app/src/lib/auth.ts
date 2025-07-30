@@ -56,6 +56,42 @@ export const authOptions: AuthOptions = {
       }
     })
   ],
+  pages: {
+    signIn: '/login',
+    signUp: '/signup',
+  },
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    callbackUrl: {
+      name: `next-auth.callback-url`,
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      name: `next-auth.csrf-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   callbacks: {
     async jwt({ token, user, account }: any) {
       if (user) {
@@ -98,66 +134,31 @@ export const authOptions: AuthOptions = {
     async signIn({ user, account, profile }: any) {
       if (account?.provider === 'google') {
         const db = getDatabase();
-        const existingUser = db.getUserByGoogleId(profile?.sub!);
+        
+        // Check if user already exists
+        const existingUser = db.getUserByGoogleId(profile?.sub);
         
         if (!existingUser) {
-          // Create new user from Google
           const userId = db.createUser({
             email: user.email!,
             name: user.name || undefined,
             googleId: profile?.sub,
             avatarUrl: user.image || undefined,
           });
-          // Update the user object with the correct ID
           user.id = userId;
         } else {
-          // Use existing user's ID
           user.id = existingUser.id;
         }
-        
         console.log('SignIn callback - Google user:', {
           originalId: user.id,
           googleId: profile?.sub,
           existingUser: existingUser?.id,
           finalId: user.id
         });
+        return true;
       }
       return true;
-    }
-  },
-  pages: {
-    signIn: '/login',
-  },
-  session: {
-    strategy: 'jwt' as const,
-  },
-  secret: config.nextAuth.secret,
-  cookies: {
-    sessionToken: {
-      name: 'next-auth.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-    callbackUrl: {
-      name: 'next-auth.callback-url',
-      options: {
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-    csrfToken: {
-      name: 'next-auth.csrf-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
     },
   },
+  debug: process.env.NODE_ENV === 'development',
 }; 
