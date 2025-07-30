@@ -2,12 +2,13 @@ import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import { getSupabaseDatabase } from './supabase-database';
 
 // Database types
 interface DatabaseInstance {
-  db: Database.Database;
-  init: () => void;
-  close: () => void;
+  db?: Database.Database;
+  init?: () => void;
+  close?: () => void;
 }
 
 // Check if we're in a Vercel environment
@@ -31,7 +32,7 @@ if (isVercel) {
   dbPath = path.join(dbDir, 'journaling-app.db');
 }
 
-class JournalingDatabase implements DatabaseInstance {
+class SQLiteDatabase implements DatabaseInstance {
   db: Database.Database;
 
   constructor() {
@@ -804,7 +805,9 @@ class JournalingDatabase implements DatabaseInstance {
 
   // Utility operations
   close() {
-    this.db.close();
+    if (this.db) {
+      this.db.close();
+    }
   }
 
   // Backup and restore
@@ -833,28 +836,20 @@ class JournalingDatabase implements DatabaseInstance {
 }
 
 // Create singleton instance
-let databaseInstance: JournalingDatabase | null = null;
+let databaseInstance: SQLiteDatabase | null = null;
 
-export function getDatabase(): JournalingDatabase {
-  if (!databaseInstance) {
-    try {
-      databaseInstance = new JournalingDatabase();
-    } catch (error) {
-      console.error('Failed to initialize database:', error);
-      
-      // In Vercel environment, provide a helpful error
-      if (process.env.VERCEL === '1') {
-        throw new Error(
-          'Database initialization failed in Vercel environment. ' +
-          'This app uses SQLite which cannot write to Vercel\'s read-only filesystem. ' +
-          'Please see VERCEL_DEPLOYMENT_LIMITATIONS.md for solutions.'
-        );
-      }
-      
-      throw error;
+export function getDatabase() {
+  // Use Supabase in production/Vercel, SQLite in development
+  if (isVercel || isProduction) {
+    console.log('Using Supabase database for production');
+    return getSupabaseDatabase();
+  } else {
+    console.log('Using SQLite database for development');
+    if (!databaseInstance) {
+      databaseInstance = new SQLiteDatabase();
     }
+    return databaseInstance;
   }
-  return databaseInstance;
 }
 
 export function closeDatabase() {
@@ -862,6 +857,4 @@ export function closeDatabase() {
     databaseInstance.close();
     databaseInstance = null;
   }
-}
-
-export default getDatabase; 
+} 
