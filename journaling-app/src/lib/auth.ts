@@ -34,31 +34,35 @@ export const authOptions: AuthOptions = {
           return null;
         }
 
-        const db = getDatabase();
-        const user = db.getUserByEmail(credentials.email);
-        
-        if (!user) {
+        try {
+          const db = getDatabase();
+          const user = db.getUserByEmail(credentials.email);
+          
+          if (!user) {
+            return null;
+          }
+
+          // Verify password using bcrypt
+          const isValidPassword = await compare(credentials.password, user.password);
+          if (isValidPassword) {
+            return {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              image: user.avatarUrl,
+            };
+          }
+
+          return null;
+        } catch (error) {
+          console.error('Credentials authorization error:', error);
           return null;
         }
-
-        // Verify password using bcrypt
-        const isValidPassword = await compare(credentials.password, user.password);
-        if (isValidPassword) {
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.avatarUrl,
-          };
-        }
-
-        return null;
       }
     })
   ],
   pages: {
     signIn: '/login',
-    signUp: '/signup',
   },
   session: {
     strategy: 'jwt',
@@ -94,68 +98,91 @@ export const authOptions: AuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, account }: any) {
+      console.log('JWT callback called:', { token: !!token, user: !!user, account: !!account });
+      
       if (user) {
         token.id = user.id;
         
         // If this is a Google sign-in, ensure we have the correct user ID
         if (account?.provider === 'google') {
-          const db = getDatabase();
-          const dbUser = db.getUserByGoogleId(user.id);
-          if (dbUser) {
-            token.id = dbUser.id;
-            console.log('JWT callback - Updated token ID:', {
-              originalId: user.id,
-              actualId: dbUser.id
-            });
+          try {
+            const db = getDatabase();
+            const dbUser = db.getUserByGoogleId(user.id);
+            if (dbUser) {
+              token.id = dbUser.id;
+              console.log('JWT callback - Updated token ID:', {
+                originalId: user.id,
+                actualId: dbUser.id
+              });
+            }
+          } catch (error) {
+            console.error('JWT callback error:', error);
           }
         }
       }
       return token;
     },
     async session({ session, token }: any) {
+      console.log('Session callback called:', { hasSession: !!session, hasToken: !!token });
+      
       if (token && session.user) {
         session.user.id = token.id as string;
         
         // If this looks like a Google ID, try to get the actual user ID
         if (token.id && token.id.length > 20) {
-          const db = getDatabase();
-          const user = db.getUserByGoogleId(token.id as string);
-          if (user) {
-            session.user.id = user.id;
-            console.log('Session callback - Updated user ID from Google ID:', {
-              googleId: token.id,
-              actualId: user.id
-            });
+          try {
+            const db = getDatabase();
+            const user = db.getUserByGoogleId(token.id as string);
+            if (user) {
+              session.user.id = user.id;
+              console.log('Session callback - Updated user ID from Google ID:', {
+                googleId: token.id,
+                actualId: user.id
+              });
+            }
+          } catch (error) {
+            console.error('Session callback error:', error);
           }
         }
       }
       return session;
     },
     async signIn({ user, account, profile }: any) {
+      console.log('SignIn callback called:', { 
+        hasUser: !!user, 
+        hasAccount: !!account, 
+        provider: account?.provider 
+      });
+      
       if (account?.provider === 'google') {
-        const db = getDatabase();
-        
-        // Check if user already exists
-        const existingUser = db.getUserByGoogleId(profile?.sub);
-        
-        if (!existingUser) {
-          const userId = db.createUser({
-            email: user.email!,
-            name: user.name || undefined,
+        try {
+          const db = getDatabase();
+          
+          // Check if user already exists
+          const existingUser = db.getUserByGoogleId(profile?.sub);
+          
+          if (!existingUser) {
+            const userId = db.createUser({
+              email: user.email!,
+              name: user.name || undefined,
+              googleId: profile?.sub,
+              avatarUrl: user.image || undefined,
+            });
+            user.id = userId;
+          } else {
+            user.id = existingUser.id;
+          }
+          console.log('SignIn callback - Google user:', {
+            originalId: user.id,
             googleId: profile?.sub,
-            avatarUrl: user.image || undefined,
+            existingUser: existingUser?.id,
+            finalId: user.id
           });
-          user.id = userId;
-        } else {
-          user.id = existingUser.id;
+          return true;
+        } catch (error) {
+          console.error('SignIn callback error:', error);
+          return false;
         }
-        console.log('SignIn callback - Google user:', {
-          originalId: user.id,
-          googleId: profile?.sub,
-          existingUser: existingUser?.id,
-          finalId: user.id
-        });
-        return true;
       }
       return true;
     },
