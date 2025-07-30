@@ -117,6 +117,10 @@ export const authOptions: AuthOptions = {
             }
           } catch (error) {
             console.error('JWT callback error:', error);
+            // In production, if database fails, use the Google ID as fallback
+            if (process.env.NODE_ENV === 'production') {
+              token.id = user.id;
+            }
           }
         }
       }
@@ -142,6 +146,10 @@ export const authOptions: AuthOptions = {
             }
           } catch (error) {
             console.error('Session callback error:', error);
+            // In production, if database fails, keep the Google ID
+            if (process.env.NODE_ENV === 'production') {
+              session.user.id = token.id as string;
+            }
           }
         }
       }
@@ -181,6 +189,11 @@ export const authOptions: AuthOptions = {
           return true;
         } catch (error) {
           console.error('SignIn callback error:', error);
+          // In production, if database fails, still allow sign-in
+          if (process.env.NODE_ENV === 'production') {
+            user.id = profile?.sub || user.id;
+            return true;
+          }
           return false;
         }
       }
