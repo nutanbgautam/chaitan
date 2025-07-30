@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { getDatabase } from '@/lib/database';
 import { authOptions } from '@/lib/auth';
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -14,17 +14,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       );
     }
 
-    const taskId = params.id;
+    const { id } = await params;
     const db = getDatabase();
-    
-    // Check if task exists and belongs to user
-    const tasks = db.getTasksByUserId(session.user.id, 1000, 0);
-    const task = tasks.find(t => t.id === taskId);
+    const task = db.getTaskById(id);
     
     if (!task) {
       return NextResponse.json(
         { message: 'Task not found' },
         { status: 404 }
+      );
+    }
+
+    // Check if task belongs to user
+    if (task.user_id !== session.user.id) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
@@ -48,6 +53,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     };
 
     return NextResponse.json(transformedTask);
+
   } catch (error) {
     console.error('Error fetching task:', error);
     return NextResponse.json(
@@ -57,7 +63,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -68,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       );
     }
 
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const { action } = await request.json();
     
     if (action !== 'toggle') {
@@ -139,7 +145,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -150,7 +156,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       );
     }
 
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const db = getDatabase();
     
     // Check if task exists and belongs to user
@@ -164,11 +170,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       );
     }
 
+    // Delete task
     db.deleteTask(taskId);
-    
+
     return NextResponse.json({
       message: 'Task deleted successfully'
     });
+
   } catch (error) {
     console.error('Error deleting task:', error);
     return NextResponse.json(

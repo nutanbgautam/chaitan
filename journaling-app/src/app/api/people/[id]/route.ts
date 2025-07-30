@@ -5,7 +5,7 @@ import { authOptions } from '@/lib/auth';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -17,9 +17,10 @@ export async function GET(
       );
     }
 
+    const { id } = await params;
     const db = getDatabase();
     const people = db.getPeopleByUserId(session.user.id);
-    const person = people.find(p => p.id === params.id);
+    const person = people.find(p => p.id === id);
     
     if (!person) {
       return NextResponse.json(
@@ -98,31 +99,127 @@ export async function GET(
       transcription: entry.transcription,
       createdAt: entry.created_at,
       mood: entry.mood,
-      tags: entry.tags ? JSON.parse(entry.tags) : []
+      sentiment: entry.sentiment,
+      title: entry.title
     }));
 
-    const personDetail = {
-      id: person.id,
-      userId: person.user_id,
-      name: person.name,
-      relationship: person.relationship,
-      displayPicture: person.display_picture,
-      createdAt: person.created_at,
-      updatedAt: person.updated_at,
-      interactionCount: mentions.length,
-      lastInteraction: mentions.length > 0 ? mentions[0].created_at : null,
-      sentiment,
-      journalEntries,
-      sentimentTrend,
-      recentMentions: recentMentions.slice(0, 10), // Limit to 10 recent mentions
-      interactionFrequency,
-      averageMood: averageMood ? Math.round(averageMood) : undefined
-    };
-
-    return NextResponse.json(personDetail);
+    return NextResponse.json({
+      person: {
+        id: person.id,
+        name: person.name,
+        relationship: person.relationship,
+        avatarUrl: person.avatar_url,
+        notes: person.notes,
+        createdAt: person.created_at
+      },
+      analytics: {
+        totalMentions: mentions.length,
+        sentiment,
+        sentimentTrend,
+        interactionFrequency,
+        averageMood,
+        recentMentions: recentMentions.slice(0, 5)
+      },
+      journalEntries
+    });
 
   } catch (error) {
     console.error('Error fetching person details:', error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    
+    const db = getDatabase();
+    
+    // Check if person exists and belongs to user
+    const people = db.getPeopleByUserId(session.user.id);
+    const person = people.find(p => p.id === id);
+    
+    if (!person) {
+      return NextResponse.json(
+        { message: 'Person not found' },
+        { status: 404 }
+      );
+    }
+
+    // Update person
+    db.updatePerson(id, {
+      name: body.name,
+      relationship: body.relationship,
+      displayPicture: body.avatarUrl,
+      context: body.notes
+    });
+
+    return NextResponse.json({
+      message: 'Person updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error updating person:', error);
+    return NextResponse.json(
+      { message: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const { id } = await params;
+    const db = getDatabase();
+    
+    // Check if person exists and belongs to user
+    const people = db.getPeopleByUserId(session.user.id);
+    const person = people.find(p => p.id === id);
+    
+    if (!person) {
+      return NextResponse.json(
+        { message: 'Person not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete person
+    db.deletePerson(id);
+
+    return NextResponse.json({
+      message: 'Person deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting person:', error);
     return NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }

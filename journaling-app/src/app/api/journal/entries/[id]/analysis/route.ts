@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { getDatabase } from '@/lib/database';
+import { authOptions } from '@/lib/auth';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -13,6 +13,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { id } = await params;
     const db = getDatabase();
     const { analysis } = await request.json();
 
@@ -23,13 +24,13 @@ export async function PUT(
     }
 
     // Update the journal entry processing status
-    db.updateJournalEntry(params.id, {
+    db.updateJournalEntry(id, {
       processingStatus: 'completed'
     });
 
     // Create or update analysis result
     db.createAnalysisResult({
-      journalEntryId: params.id,
+      journalEntryId: id,
       peopleMentioned: analysis.people ? JSON.stringify(analysis.people) : undefined,
       financeCues: analysis.finance ? JSON.stringify(analysis.finance) : undefined,
       tasksMentioned: analysis.tasks ? JSON.stringify(analysis.tasks) : undefined,
@@ -72,7 +73,7 @@ export async function PUT(
             date: new Date().toISOString(),
             priority: 'medium',
             source: 'journal',
-            journalEntryId: params.id
+            journalEntryId: id
           });
         }
       }
@@ -89,7 +90,7 @@ export async function PUT(
             priority: task.priority || 'medium',
             category: task.category || 'general',
             source: 'journal',
-            journalEntryId: params.id
+            journalEntryId: id
           });
         }
       }
