@@ -10,20 +10,41 @@ interface DatabaseInstance {
   close: () => void;
 }
 
-// Create database directory if it doesn't exist
-const dbDir = path.join(process.cwd(), 'data');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+// Check if we're in a Vercel environment
+const isVercel = process.env.VERCEL === '1';
+const isProduction = process.env.NODE_ENV === 'production';
 
-const dbPath = path.join(dbDir, 'journaling-app.db');
+let dbPath: string;
+let dbDir: string;
+
+if (isVercel) {
+  // In Vercel, we can't write to filesystem, so we'll use in-memory database
+  // Note: This means data will be lost between function invocations
+  console.warn('⚠️  Running in Vercel environment - using in-memory database. Data will not persist between requests.');
+  dbPath = ':memory:';
+} else {
+  // In development or other environments, use file-based database
+  dbDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+  dbPath = path.join(dbDir, 'journaling-app.db');
+}
 
 class JournalingDatabase implements DatabaseInstance {
   db: Database.Database;
 
   constructor() {
-    this.db = new Database(dbPath);
-    this.init();
+    try {
+      this.db = new Database(dbPath);
+      this.init();
+    } catch (error) {
+      console.error('Failed to initialize database:', error);
+      if (isVercel) {
+        throw new Error('Database initialization failed in Vercel environment. Consider using a cloud database service like PlanetScale, Supabase, or Neon for production deployments.');
+      }
+      throw error;
+    }
   }
 
   init() {
@@ -120,39 +141,28 @@ class JournalingDatabase implements DatabaseInstance {
       )
     `);
 
-    // Contact details table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS contact_details (
-        id TEXT PRIMARY KEY,
-        person_id TEXT NOT NULL,
-        type TEXT CHECK(type IN ('email', 'phone', 'address')),
-        value TEXT NOT NULL,
-        label TEXT,
-        is_primary BOOLEAN DEFAULT FALSE,
-        FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
-      )
-    `);
-
     // Finance entries table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS finance_entries (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        amount DECIMAL(10,2) NOT NULL,
+        amount REAL NOT NULL,
         currency TEXT DEFAULT 'USD',
         category TEXT NOT NULL,
         subcategory TEXT,
-        description TEXT,
-        date DATE NOT NULL,
+        description TEXT NOT NULL,
+        date TEXT NOT NULL,
         recurring BOOLEAN DEFAULT FALSE,
         recurring_pattern TEXT,
-        priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+        priority TEXT DEFAULT 'medium',
         tags TEXT,
         notes TEXT,
         source TEXT DEFAULT 'manual',
         journal_entry_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL
       )
     `);
 
@@ -163,21 +173,21 @@ class JournalingDatabase implements DatabaseInstance {
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
-        status TEXT CHECK(status IN ('pending', 'in-progress', 'completed')),
-        priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
-        start_date DATE,
-        deadline DATE,
-        category TEXT,
+        status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'medium',
+        start_date TEXT,
+        deadline TEXT,
+        category TEXT DEFAULT 'general',
         assignee TEXT,
         remarks TEXT,
         is_completed BOOLEAN DEFAULT FALSE,
-        completed_date DATETIME,
-        google_calendar_id TEXT,
+        completed_date TEXT,
         source TEXT DEFAULT 'manual',
         journal_entry_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL
       )
     `);
 
@@ -188,37 +198,52 @@ class JournalingDatabase implements DatabaseInstance {
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
-        target_date DATE NOT NULL,
+        target_date TEXT,
         life_area_id TEXT NOT NULL,
-        priority TEXT CHECK(priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
-        category TEXT,
-        status TEXT CHECK(status IN ('pending', 'in-progress', 'completed')) DEFAULT 'pending',
-        progress INTEGER CHECK(progress >= 0 AND progress <= 100) DEFAULT 0,
+        priority TEXT DEFAULT 'medium',
+        category TEXT DEFAULT 'general',
+        status TEXT DEFAULT 'active',
+        progress INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // SoulMatrix table
+    // Nudge interactions table
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS soul_matrix (
+      CREATE TABLE IF NOT EXISTS nudge_interactions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        traits TEXT NOT NULL,
-        confidence DECIMAL(3,2) CHECK(confidence >= 0 AND confidence <= 1),
-        analyzed_entries TEXT,
-        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-        next_update DATETIME,
+        nudge_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        feedback TEXT,
+        timestamp TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // Wheel of Life table
+    // Soul matrix table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS soul_matrix (
+        id TEXT PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        traits TEXT NOT NULL,
+        confidence REAL DEFAULT 0,
+        analyzed_entries TEXT,
+        next_update TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Wheel of life table
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS wheel_of_life (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
+        user_id TEXT UNIQUE NOT NULL,
         life_areas TEXT NOT NULL,
         priorities TEXT,
         is_completed BOOLEAN DEFAULT FALSE,
@@ -233,48 +258,17 @@ class JournalingDatabase implements DatabaseInstance {
       CREATE TABLE IF NOT EXISTS recaps (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        type TEXT CHECK(type IN ('weekly', 'monthly')),
-        period_start DATE NOT NULL,
-        period_end DATE NOT NULL,
+        type TEXT CHECK(type IN ('weekly', 'monthly')) NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
         content TEXT NOT NULL,
         insights TEXT,
         recommendations TEXT,
         life_area_improvements TEXT,
         metrics TEXT,
-        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        viewed_at DATETIME,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Nudge interactions table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS nudge_interactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        nudge_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        feedback TEXT,
-        timestamp TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
-    `);
-
-    // Create indexes for better performance
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_journal_entries_user_id ON journal_entries(user_id);
-      CREATE INDEX IF NOT EXISTS idx_journal_entries_created_at ON journal_entries(created_at);
-      CREATE INDEX IF NOT EXISTS idx_check_ins_user_id ON check_ins(user_id);
-      CREATE INDEX IF NOT EXISTS idx_check_ins_created_at ON check_ins(created_at);
-      CREATE INDEX IF NOT EXISTS idx_people_user_id ON people(user_id);
-      CREATE INDEX IF NOT EXISTS idx_finance_entries_user_id ON finance_entries(user_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
-      CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id);
-      CREATE INDEX IF NOT EXISTS idx_goals_target_date ON goals(target_date);
-      CREATE INDEX IF NOT EXISTS idx_soul_matrix_user_id ON soul_matrix(user_id);
-      CREATE INDEX IF NOT EXISTS idx_wheel_of_life_user_id ON wheel_of_life(user_id);
-      CREATE INDEX IF NOT EXISTS idx_recaps_user_id ON recaps(user_id);
     `);
   }
 
@@ -801,7 +795,7 @@ class JournalingDatabase implements DatabaseInstance {
       params.push(type);
     }
     
-    query += ' ORDER BY generated_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
     
     const stmt = this.db.prepare(query);
@@ -839,19 +833,34 @@ class JournalingDatabase implements DatabaseInstance {
 }
 
 // Create singleton instance
-let dbInstance: JournalingDatabase | null = null;
+let databaseInstance: JournalingDatabase | null = null;
 
 export function getDatabase(): JournalingDatabase {
-  if (!dbInstance) {
-    dbInstance = new JournalingDatabase();
+  if (!databaseInstance) {
+    try {
+      databaseInstance = new JournalingDatabase();
+    } catch (error) {
+      console.error('Failed to initialize database:', error);
+      
+      // In Vercel environment, provide a helpful error
+      if (process.env.VERCEL === '1') {
+        throw new Error(
+          'Database initialization failed in Vercel environment. ' +
+          'This app uses SQLite which cannot write to Vercel\'s read-only filesystem. ' +
+          'Please see VERCEL_DEPLOYMENT_LIMITATIONS.md for solutions.'
+        );
+      }
+      
+      throw error;
+    }
   }
-  return dbInstance;
+  return databaseInstance;
 }
 
 export function closeDatabase() {
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
+  if (databaseInstance) {
+    databaseInstance.close();
+    databaseInstance = null;
   }
 }
 
