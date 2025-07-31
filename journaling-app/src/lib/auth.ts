@@ -98,11 +98,20 @@ export const authOptions: AuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, account }: any) {
-      console.log('JWT callback called:', { token: !!token, user: !!user, account: !!account });
+      console.log('JWT callback called:', { 
+        token: !!token, 
+        user: !!user, 
+        account: !!account,
+        hasTokenId: !!token?.id,
+        hasTokenEmail: !!token?.email,
+        userEmail: user?.email,
+        accountProvider: account?.provider
+      });
       
+      // If we have user data, set the ID
       if (user) {
         token.id = user.id;
-        console.log('JWT callback - Set user ID:', user.id);
+        console.log('JWT callback - Set user ID from user object:', user.id);
       }
       
       // If we have a token but no user ID, try to get it from the database
@@ -116,6 +125,8 @@ export const authOptions: AuthOptions = {
               email: token.email,
               userId: dbUser.id
             });
+          } else {
+            console.log('JWT callback - No user found in database for email:', token.email);
           }
         } catch (error) {
           console.error('JWT callback - Error getting user from database:', error);
@@ -123,7 +134,7 @@ export const authOptions: AuthOptions = {
       }
       
       // If this is a Google sign-in, ensure we have the correct user ID
-      if (account?.provider === 'google') {
+      if (account?.provider === 'google' && user?.id) {
         try {
           const db = getDatabase();
           const dbUser = db.getUserByGoogleId(user.id);
@@ -133,13 +144,35 @@ export const authOptions: AuthOptions = {
               originalId: user.id,
               actualId: dbUser.id
             });
+          } else {
+            console.log('JWT callback - No user found in database for Google ID:', user.id);
           }
         } catch (error) {
           console.error('JWT callback error:', error);
           // In production, if database fails, use the Google ID as fallback
           if (process.env.NODE_ENV === 'production') {
             token.id = user.id;
+            console.log('JWT callback - Using Google ID as fallback in production:', user.id);
           }
+        }
+      }
+      
+      // Final fallback: if we still don't have an ID but have an email, create user
+      if (token && !token.id && token.email && process.env.NODE_ENV === 'production') {
+        try {
+          const db = getDatabase();
+          console.log('JWT callback - Creating user in production for email:', token.email);
+          
+          const userId = db.createUser({
+            email: token.email,
+            name: token.name || undefined,
+            googleId: account?.provider === 'google' ? user?.id : undefined,
+          });
+          
+          token.id = userId;
+          console.log('JWT callback - Created user in production with ID:', userId);
+        } catch (error) {
+          console.error('JWT callback - Error creating user in production:', error);
         }
       }
       
@@ -152,7 +185,13 @@ export const authOptions: AuthOptions = {
       return token;
     },
     async session({ session, token }: any) {
-      console.log('Session callback called:', { hasSession: !!session, hasToken: !!token });
+      console.log('Session callback called:', { 
+        hasSession: !!session, 
+        hasToken: !!token,
+        hasTokenId: !!token?.id,
+        hasTokenEmail: !!token?.email,
+        sessionUserId: session?.user?.id
+      });
       
       if (token && session.user) {
         session.user.id = token.id as string;
@@ -168,6 +207,8 @@ export const authOptions: AuthOptions = {
                 email: token.email,
                 userId: user.id
               });
+            } else {
+              console.log('Session callback - No user found in database for email:', token.email);
             }
           } catch (error) {
             console.error('Session callback - Error getting user from database:', error);
@@ -185,13 +226,34 @@ export const authOptions: AuthOptions = {
                 googleId: token.id,
                 actualId: user.id
               });
+            } else {
+              console.log('Session callback - No user found in database for Google ID:', token.id);
             }
           } catch (error) {
             console.error('Session callback error:', error);
             // In production, if database fails, keep the Google ID
             if (process.env.NODE_ENV === 'production') {
               session.user.id = token.id as string;
+              console.log('Session callback - Using Google ID as fallback in production:', token.id);
             }
+          }
+        }
+        
+        // Final fallback: if we still don't have an ID but have an email, create user
+        if (!session.user.id && token.email && process.env.NODE_ENV === 'production') {
+          try {
+            const db = getDatabase();
+            console.log('Session callback - Creating user in production for email:', token.email);
+            
+            const userId = db.createUser({
+              email: token.email,
+              name: token.name || undefined,
+            });
+            
+            session.user.id = userId;
+            console.log('Session callback - Created user in production with ID:', userId);
+          } catch (error) {
+            console.error('Session callback - Error creating user in production:', error);
           }
         }
       }
