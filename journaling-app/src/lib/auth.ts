@@ -102,28 +102,53 @@ export const authOptions: AuthOptions = {
       
       if (user) {
         token.id = user.id;
-        
-        // If this is a Google sign-in, ensure we have the correct user ID
-        if (account?.provider === 'google') {
-          try {
-            const db = getDatabase();
-            const dbUser = db.getUserByGoogleId(user.id);
-            if (dbUser) {
-              token.id = dbUser.id;
-              console.log('JWT callback - Updated token ID:', {
-                originalId: user.id,
-                actualId: dbUser.id
-              });
-            }
-          } catch (error) {
-            console.error('JWT callback error:', error);
-            // In production, if database fails, use the Google ID as fallback
-            if (process.env.NODE_ENV === 'production') {
-              token.id = user.id;
-            }
+        console.log('JWT callback - Set user ID:', user.id);
+      }
+      
+      // If we have a token but no user ID, try to get it from the database
+      if (token && !token.id && token.email) {
+        try {
+          const db = getDatabase();
+          const dbUser = db.getUserByEmail(token.email);
+          if (dbUser) {
+            token.id = dbUser.id;
+            console.log('JWT callback - Retrieved user ID from database:', {
+              email: token.email,
+              userId: dbUser.id
+            });
+          }
+        } catch (error) {
+          console.error('JWT callback - Error getting user from database:', error);
+        }
+      }
+      
+      // If this is a Google sign-in, ensure we have the correct user ID
+      if (account?.provider === 'google') {
+        try {
+          const db = getDatabase();
+          const dbUser = db.getUserByGoogleId(user.id);
+          if (dbUser) {
+            token.id = dbUser.id;
+            console.log('JWT callback - Updated token ID from Google:', {
+              originalId: user.id,
+              actualId: dbUser.id
+            });
+          }
+        } catch (error) {
+          console.error('JWT callback error:', error);
+          // In production, if database fails, use the Google ID as fallback
+          if (process.env.NODE_ENV === 'production') {
+            token.id = user.id;
           }
         }
       }
+      
+      console.log('JWT callback - Final token:', {
+        id: token.id,
+        email: token.email,
+        hasId: !!token.id
+      });
+      
       return token;
     },
     async session({ session, token }: any) {
@@ -131,6 +156,23 @@ export const authOptions: AuthOptions = {
       
       if (token && session.user) {
         session.user.id = token.id as string;
+        
+        // If we don't have a user ID but have an email, try to get it from database
+        if (!token.id && token.email) {
+          try {
+            const db = getDatabase();
+            const user = db.getUserByEmail(token.email);
+            if (user) {
+              session.user.id = user.id;
+              console.log('Session callback - Retrieved user ID from database:', {
+                email: token.email,
+                userId: user.id
+              });
+            }
+          } catch (error) {
+            console.error('Session callback - Error getting user from database:', error);
+          }
+        }
         
         // If this looks like a Google ID, try to get the actual user ID
         if (token.id && token.id.length > 20) {
@@ -153,6 +195,13 @@ export const authOptions: AuthOptions = {
           }
         }
       }
+      
+      console.log('Session callback - Final session:', {
+        userId: session.user?.id,
+        email: session.user?.email,
+        hasUserId: !!session.user?.id
+      });
+      
       return session;
     },
     async signIn({ user, account, profile }: any) {
