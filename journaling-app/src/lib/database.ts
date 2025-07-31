@@ -730,7 +730,7 @@ class SQLiteDatabase implements DatabaseInstance {
 let databaseInstance: SQLiteDatabase | null = null;
 
 export function getDatabase() {
-  // Use Supabase in production/Vercel, SQLite in development
+  // Always use Supabase in production/Vercel
   if (isVercel || isProduction) {
     console.log('Using Supabase database for production');
     return getSupabaseDatabase();
