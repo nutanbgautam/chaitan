@@ -1,100 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { getDatabase } from '@/lib/database';
 import { authOptions } from '@/lib/auth';
+import { getDatabase } from '@/lib/database';
 
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
+    console.log('Journal entries GET - Session:', {
+      hasSession: !!session,
+      userId: session?.user?.id,
+      email: session?.user?.email
+    });
+
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+      console.log('Journal entries GET - No session or user ID');
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '50');
-    const offset = parseInt(searchParams.get('offset') || '0');
-
     const db = getDatabase();
-    const entries = db.getJournalEntriesByUserId(session.user.id, limit, offset);
+    const limit = parseInt(request.nextUrl.searchParams.get('limit') || '100');
+    const entries = db.getJournalEntriesByUserId(session.user.id, limit);
 
-    // Transform database fields to camelCase for frontend
-    const transformedEntries = entries.map(entry => ({
-      id: entry.id,
-      content: entry.content,
-      transcription: entry.transcription,
-      audioUrl: entry.audio_url,
-      processingType: entry.processing_type,
-      processingStatus: entry.processing_status,
-      createdAt: entry.created_at,
-      updatedAt: entry.updated_at
-    }));
-
-    return NextResponse.json(transformedEntries);
-
+    return NextResponse.json(entries);
   } catch (error) {
-    console.error('Error fetching journal entries:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Journal entries GET error:', error);
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const { content, audioUrl, transcription, processingType, processingStatus } = await request.json();
-
-    if (!content && !audioUrl) {
-      return NextResponse.json(
-        { message: 'Content or audio URL is required' },
-        { status: 400 }
-      );
-    }
-
-    const db = getDatabase();
-    const entryId = db.createJournalEntry({
-      userId: session.user.id,
-      content: content || '',
-      audioUrl,
-      transcription,
-      processingType: processingType || 'full-analysis',
-      processingStatus: processingStatus || 'draft',
+    console.log('Journal entries POST - Session:', {
+      hasSession: !!session,
+      userId: session?.user?.id,
+      email: session?.user?.email
     });
 
-    const entry = db.getJournalEntryById(entryId);
+    if (!session?.user?.id) {
+      console.log('Journal entries POST - No session or user ID');
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Transform database fields to camelCase for frontend
-    const transformedEntry = {
-      id: entry.id,
-      content: entry.content,
-      transcription: entry.transcription,
-      audioUrl: entry.audio_url,
-      processingType: entry.processing_type,
-      processingStatus: entry.processing_status,
-      createdAt: entry.created_at,
-      updatedAt: entry.updated_at
-    };
+    const body = await request.json();
+    const db = getDatabase();
+    
+    const entryId = db.createJournalEntry({
+      userId: session.user.id,
+      content: body.content,
+      audioUrl: body.audioUrl,
+      transcription: body.transcription,
+      processingType: body.processingType || 'full-analysis',
+      processingStatus: body.processingStatus || 'draft'
+    });
 
-    return NextResponse.json(transformedEntry, { status: 201 });
-
+    console.log('Journal entries POST - Created entry:', entryId);
+    return NextResponse.json({ id: entryId }, { status: 201 });
   } catch (error) {
-    console.error('Error creating journal entry:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Journal entries POST error:', error);
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 } 
