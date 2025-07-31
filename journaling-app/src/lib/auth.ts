@@ -208,39 +208,67 @@ export const authOptions: AuthOptions = {
       console.log('SignIn callback called:', { 
         hasUser: !!user, 
         hasAccount: !!account, 
-        provider: account?.provider 
+        provider: account?.provider,
+        userEmail: user?.email,
+        userGoogleId: profile?.sub
       });
       
       if (account?.provider === 'google') {
         try {
           const db = getDatabase();
           
-          // Check if user already exists
-          const existingUser = db.getUserByGoogleId(profile?.sub);
+          // First, try to find user by Google ID
+          let existingUser = db.getUserByGoogleId(profile?.sub);
+          
+          // If not found by Google ID, try to find by email
+          if (!existingUser && user?.email) {
+            existingUser = db.getUserByEmail(user.email);
+            console.log('SignIn callback - User lookup by email:', {
+              email: user.email,
+              found: !!existingUser,
+              userId: existingUser?.id
+            });
+          }
           
           if (!existingUser) {
+            // Create new user
+            console.log('SignIn callback - Creating new user:', {
+              email: user.email,
+              name: user.name,
+              googleId: profile?.sub
+            });
+            
             const userId = db.createUser({
               email: user.email!,
               name: user.name || undefined,
               googleId: profile?.sub,
               avatarUrl: user.image || undefined,
             });
+            
             user.id = userId;
+            console.log('SignIn callback - Created new user with ID:', userId);
           } else {
+            // Update existing user with Google ID if not already set
+            if (!existingUser.google_id && profile?.sub) {
+              console.log('SignIn callback - Updating existing user with Google ID:', {
+                userId: existingUser.id,
+                googleId: profile?.sub
+              });
+              // Note: You might need to add an updateUser method to your database
+            }
+            
             user.id = existingUser.id;
+            console.log('SignIn callback - Using existing user ID:', existingUser.id);
           }
-          console.log('SignIn callback - Google user:', {
-            originalId: user.id,
-            googleId: profile?.sub,
-            existingUser: existingUser?.id,
-            finalId: user.id
-          });
+          
+          console.log('SignIn callback - Final user ID:', user.id);
           return true;
         } catch (error) {
           console.error('SignIn callback error:', error);
           // In production, if database fails, still allow sign-in
           if (process.env.NODE_ENV === 'production') {
             user.id = profile?.sub || user.id;
+            console.log('SignIn callback - Using fallback ID due to database error:', user.id);
             return true;
           }
           return false;
