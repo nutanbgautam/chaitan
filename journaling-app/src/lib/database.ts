@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
 import { getSupabaseDatabase } from './supabase-database';
@@ -52,12 +51,7 @@ class SQLiteDatabase implements DatabaseInstance {
     // Enable foreign keys
     this.db.pragma('foreign_keys = ON');
 
-    // Create tables
-    this.createTables();
-  }
-
-  createTables() {
-    // Users table
+    // Create tables if they don't exist
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -69,11 +63,8 @@ class SQLiteDatabase implements DatabaseInstance {
         google_id TEXT,
         avatar_url TEXT,
         settings TEXT
-      )
-    `);
+      );
 
-    // Journal entries table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS journal_entries (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -87,51 +78,36 @@ class SQLiteDatabase implements DatabaseInstance {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Analysis results table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS analysis_results (
         id TEXT PRIMARY KEY,
         journal_entry_id TEXT NOT NULL,
-        sentiment_analysis TEXT,
-        people_mentioned TEXT,
-        finance_cues TEXT,
-        tasks_mentioned TEXT,
-        locations TEXT,
-        temporal_references TEXT,
-        life_areas TEXT,
-        insights TEXT,
+        entities TEXT,
+        sentiment TEXT,
+        topics TEXT,
+        summary TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Check ins table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS check_ins (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        mood TEXT NOT NULL,
-        energy TEXT,
-        movement INTEGER CHECK(movement >= 1 AND movement <= 10),
-        sleep_hours INTEGER,
-        sleep_minutes INTEGER,
-        note TEXT,
+        mood INTEGER CHECK(mood >= 1 AND mood <= 10),
+        energy INTEGER CHECK(energy >= 1 AND energy <= 10),
+        stress INTEGER CHECK(stress >= 1 AND stress <= 10),
+        notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // People table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS people (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         name TEXT NOT NULL,
-        display_picture TEXT,
         relationship TEXT,
+        display_picture TEXT,
         context TEXT,
         sentiment TEXT,
         frequency INTEGER DEFAULT 0,
@@ -139,148 +115,115 @@ class SQLiteDatabase implements DatabaseInstance {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Finance entries table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS finance_entries (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         amount REAL NOT NULL,
-        currency TEXT DEFAULT 'USD',
-        category TEXT NOT NULL,
-        subcategory TEXT,
         description TEXT NOT NULL,
-        date TEXT NOT NULL,
-        recurring BOOLEAN DEFAULT FALSE,
-        recurring_pattern TEXT,
-        priority TEXT DEFAULT 'medium',
-        tags TEXT,
-        notes TEXT,
-        source TEXT DEFAULT 'manual',
+        category TEXT DEFAULT 'other',
+        type TEXT CHECK(type IN ('income', 'expense')) DEFAULT 'expense',
+        date TEXT,
         journal_entry_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL
-      )
-    `);
+      );
 
-    // Tasks table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
-        status TEXT DEFAULT 'pending',
-        priority TEXT DEFAULT 'medium',
-        start_date TEXT,
-        deadline TEXT,
-        category TEXT DEFAULT 'general',
-        assignee TEXT,
-        remarks TEXT,
-        is_completed BOOLEAN DEFAULT FALSE,
-        completed_date TEXT,
-        source TEXT DEFAULT 'manual',
+        status TEXT CHECK(status IN ('pending', 'in_progress', 'completed')) DEFAULT 'pending',
+        priority TEXT CHECK(priority IN ('low', 'medium', 'high')) DEFAULT 'medium',
+        due_date TEXT,
         journal_entry_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL
-      )
-    `);
+      );
 
-    // Goals table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS goals (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
+        category TEXT DEFAULT 'personal',
         target_date TEXT,
-        life_area_id TEXT NOT NULL,
-        priority TEXT DEFAULT 'medium',
-        category TEXT DEFAULT 'general',
-        status TEXT DEFAULT 'active',
         progress INTEGER DEFAULT 0,
+        status TEXT CHECK(status IN ('active', 'completed', 'paused')) DEFAULT 'active',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Nudge interactions table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS nudge_interactions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        nudge_id TEXT NOT NULL,
-        action TEXT NOT NULL,
-        feedback TEXT,
-        timestamp TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Soul matrix table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS soul_matrix (
         id TEXT PRIMARY KEY,
         user_id TEXT UNIQUE NOT NULL,
-        traits TEXT NOT NULL,
-        confidence REAL DEFAULT 0,
-        analyzed_entries TEXT,
-        next_update TEXT,
+        physical_health INTEGER DEFAULT 5,
+        mental_health INTEGER DEFAULT 5,
+        emotional_health INTEGER DEFAULT 5,
+        spiritual_health INTEGER DEFAULT 5,
+        social_health INTEGER DEFAULT 5,
+        financial_health INTEGER DEFAULT 5,
+        career_health INTEGER DEFAULT 5,
+        environmental_health INTEGER DEFAULT 5,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Wheel of life table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS wheel_of_life (
         id TEXT PRIMARY KEY,
         user_id TEXT UNIQUE NOT NULL,
-        life_areas TEXT NOT NULL,
-        priorities TEXT,
-        is_completed BOOLEAN DEFAULT FALSE,
+        career INTEGER DEFAULT 5,
+        finances INTEGER DEFAULT 5,
+        health INTEGER DEFAULT 5,
+        family INTEGER DEFAULT 5,
+        relationships INTEGER DEFAULT 5,
+        personal_growth INTEGER DEFAULT 5,
+        recreation INTEGER DEFAULT 5,
+        spirituality INTEGER DEFAULT 5,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
+      );
 
-    // Recaps table
-    this.db.exec(`
       CREATE TABLE IF NOT EXISTS recaps (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
-        type TEXT CHECK(type IN ('weekly', 'monthly')) NOT NULL,
-        period_start TEXT NOT NULL,
-        period_end TEXT NOT NULL,
-        content TEXT NOT NULL,
-        insights TEXT,
-        recommendations TEXT,
-        life_area_improvements TEXT,
-        metrics TEXT,
+        period_start TEXT,
+        period_end TEXT,
+        content TEXT,
+        category TEXT,
+        generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
+      );
+
+      CREATE TABLE IF NOT EXISTS nudge_interactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        nudge_type TEXT,
+        interaction_data TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
     `);
   }
 
   // User operations
-  createUser(user: { email: string; name?: string; password?: string; googleId?: string; avatarUrl?: string }) {
-    const id = uuidv4();
+  createUser(user: { email: string; name?: string; password?: string; googleId?: string; avatarUrl?: string }): string {
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO users (id, email, name, password, google_id, avatar_url)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, user.email, user.name, user.password, user.googleId, user.avatarUrl);
+    stmt.run(id, user.email, user.name || null, user.password || null, user.googleId || null, user.avatarUrl || null);
     return id;
   }
 
@@ -320,7 +263,7 @@ class SQLiteDatabase implements DatabaseInstance {
     processingType: 'transcribe-only' | 'full-analysis';
     processingStatus: 'draft' | 'transcribed' | 'analyzed' | 'completed';
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO journal_entries (id, user_id, content, audio_url, transcription, processing_type, processing_status)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -334,14 +277,9 @@ class SQLiteDatabase implements DatabaseInstance {
     return stmt.get(id) as any;
   }
 
-  getJournalEntriesByUserId(userId: string, limit = 50, offset = 0) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM journal_entries 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?
-    `);
-    return stmt.all(userId, limit, offset) as any[];
+  getJournalEntriesByUserId(userId: string, limit = 100) {
+    const stmt = this.db.prepare('SELECT * FROM journal_entries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   updateJournalEntry(id: string, updates: Partial<{
@@ -370,7 +308,7 @@ class SQLiteDatabase implements DatabaseInstance {
     lifeAreas?: string;
     insights?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO analysis_results (
         id, journal_entry_id, sentiment_analysis, people_mentioned, 
@@ -395,30 +333,23 @@ class SQLiteDatabase implements DatabaseInstance {
   // Check-in operations
   createCheckIn(checkIn: {
     userId: string;
-    mood: string;
-    energy: string;
-    movement: number;
-    sleepHours: number;
-    sleepMinutes: number;
-    note?: string;
+    mood: number;
+    energy: number;
+    stress: number;
+    notes?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO check_ins (id, user_id, mood, energy, movement, sleep_hours, sleep_minutes, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO check_ins (id, user_id, mood, energy, stress, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, checkIn.userId, checkIn.mood, checkIn.energy, checkIn.movement, checkIn.sleepHours, checkIn.sleepMinutes, checkIn.note);
+    stmt.run(id, checkIn.userId, checkIn.mood, checkIn.energy, checkIn.stress, checkIn.notes || null);
     return id;
   }
 
-  getCheckInsByUserId(userId: string, limit = 50, offset = 0) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM check_ins 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?
-    `);
-    return stmt.all(userId, limit, offset) as any[];
+  getCheckInsByUserId(userId: string, limit = 10) {
+    const stmt = this.db.prepare('SELECT * FROM check_ins WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   // People operations
@@ -430,7 +361,7 @@ class SQLiteDatabase implements DatabaseInstance {
     context?: string;
     sentiment?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO people (id, user_id, name, display_picture, relationship, context, sentiment)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -468,43 +399,33 @@ class SQLiteDatabase implements DatabaseInstance {
     createFinanceEntry(entry: {
     userId: string;
     amount: number;
-    currency: string;
-    category: string;
-    subcategory?: string;
     description: string;
-    date: string;
-    recurring?: boolean;
-    recurringPattern?: string;
-    priority: string;
-    tags?: string;
-    notes?: string;
-    source?: string;
+    category?: string;
+    type?: string;
+    date?: string;
     journalEntryId?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO finance_entries (
-        id, user_id, amount, currency, category, subcategory, description,
-        date, recurring, recurring_pattern, priority, tags, notes, source, journal_entry_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO finance_entries (id, user_id, amount, description, category, type, date, journal_entry_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      id, entry.userId, entry.amount, entry.currency, entry.category, entry.subcategory, entry.description,
-      entry.date, entry.recurring, entry.recurringPattern, entry.priority, entry.tags, entry.notes,
-      entry.source || 'manual', entry.journalEntryId
+      id,
+      entry.userId,
+      entry.amount,
+      entry.description,
+      entry.category || 'other',
+      entry.type || 'expense',
+      entry.date || null,
+      entry.journalEntryId || null
     );
     return id;
   }
 
-  getFinanceEntriesByUserId(userId: string, limit = 50, offset = 0) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM finance_entries 
-      WHERE user_id = ? 
-      ORDER BY date DESC 
-      LIMIT ? OFFSET ?
-    `);
-    return stmt.all(userId, limit, offset) as any[];
+  getFinanceEntriesByUserId(userId: string, limit = 100) {
+    const stmt = this.db.prepare('SELECT * FROM finance_entries WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   getFinanceEntryById(id: string) {
@@ -541,39 +462,32 @@ class SQLiteDatabase implements DatabaseInstance {
     userId: string;
     title: string;
     description?: string;
-    status: string;
-    priority: string;
-    startDate?: string;
-    deadline?: string;
-    category?: string;
-    assignee?: string;
-    remarks?: string;
-    source?: string;
+    status?: string;
+    priority?: string;
+    dueDate?: string;
     journalEntryId?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO tasks (
-        id, user_id, title, description, status, priority, start_date, 
-        deadline, category, assignee, remarks, source, journal_entry_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, user_id, title, description, status, priority, due_date, journal_entry_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      id, task.userId, task.title, task.description, task.status, task.priority, task.startDate,
-      task.deadline, task.category, task.assignee, task.remarks, task.source || 'manual', task.journalEntryId
+      id,
+      task.userId,
+      task.title,
+      task.description || null,
+      task.status || 'pending',
+      task.priority || 'medium',
+      task.dueDate || null,
+      task.journalEntryId || null
     );
     return id;
   }
 
-  getTasksByUserId(userId: string, limit = 50, offset = 0) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM tasks 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?
-    `);
-    return stmt.all(userId, limit, offset) as any[];
+  getTasksByUserId(userId: string, limit = 100) {
+    const stmt = this.db.prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   getTaskById(id: string) {
@@ -609,31 +523,29 @@ class SQLiteDatabase implements DatabaseInstance {
   createGoal(goal: {
     userId: string;
     title: string;
-    description: string;
-    targetDate: string;
-    lifeAreaId: string;
-    priority: string;
-    category: string;
-    status: string;
-    progress: number;
+    description?: string;
+    category?: string;
+    targetDate?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO goals (id, user_id, title, description, target_date, life_area_id, priority, category, status, progress)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO goals (id, user_id, title, description, category, target_date)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, goal.userId, goal.title, goal.description, goal.targetDate, goal.lifeAreaId, goal.priority, goal.category, goal.status, goal.progress);
+    stmt.run(
+      id,
+      goal.userId,
+      goal.title,
+      goal.description || null,
+      goal.category || 'personal',
+      goal.targetDate || null
+    );
     return id;
   }
 
-  getGoalsByUserId(userId: string, limit = 50, offset = 0) {
-    const stmt = this.db.prepare(`
-      SELECT * FROM goals 
-      WHERE user_id = ? 
-      ORDER BY target_date ASC 
-      LIMIT ? OFFSET ?
-    `);
-    return stmt.all(userId, limit, offset) as any[];
+  getGoalsByUserId(userId: string, limit = 100) {
+    const stmt = this.db.prepare('SELECT * FROM goals WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   updateGoal(id: string, updates: Partial<{
@@ -688,7 +600,7 @@ class SQLiteDatabase implements DatabaseInstance {
     analyzedEntries?: string;
     nextUpdate?: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO soul_matrix (id, user_id, traits, confidence, analyzed_entries, next_update)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -721,7 +633,7 @@ class SQLiteDatabase implements DatabaseInstance {
     priorities?: string | null;
     isCompleted?: boolean;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
       INSERT INTO wheel_of_life (id, user_id, life_areas, priorities, is_completed)
       VALUES (?, ?, ?, ?, ?)
@@ -763,44 +675,23 @@ class SQLiteDatabase implements DatabaseInstance {
   // Recap operations
   createRecap(recap: {
     userId: string;
-    type: 'weekly' | 'monthly';
     periodStart: string;
     periodEnd: string;
     content: string;
-    insights?: string;
-    recommendations?: string;
-    lifeAreaImprovements?: string;
-    metrics?: string;
+    category: string;
   }) {
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = this.db.prepare(`
-      INSERT INTO recaps (
-        id, user_id, type, period_start, period_end, content, 
-        insights, recommendations, life_area_improvements, metrics
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recaps (id, user_id, period_start, period_end, content, category)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(
-      id, recap.userId, recap.type, recap.periodStart, recap.periodEnd, recap.content,
-      recap.insights, recap.recommendations, recap.lifeAreaImprovements, recap.metrics
-    );
+    stmt.run(id, recap.userId, recap.periodStart, recap.periodEnd, recap.content, recap.category);
     return id;
   }
 
-  getRecapsByUserId(userId: string, type?: 'weekly' | 'monthly', limit = 20, offset = 0) {
-    let query = 'SELECT * FROM recaps WHERE user_id = ?';
-    const params: (string | number)[] = [userId];
-    
-    if (type) {
-      query += ' AND type = ?';
-      params.push(type);
-    }
-    
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
-    
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as any[];
+  getRecapsByUserId(userId: string, limit = 50) {
+    const stmt = this.db.prepare('SELECT * FROM recaps WHERE user_id = ? ORDER BY created_at DESC LIMIT ?');
+    return stmt.all(userId, limit) as any[];
   }
 
   // Utility operations
@@ -846,7 +737,19 @@ export function getDatabase() {
   } else {
     console.log('Using SQLite database for development');
     if (!databaseInstance) {
-      databaseInstance = new SQLiteDatabase();
+      try {
+        databaseInstance = new SQLiteDatabase();
+      } catch (error) {
+        console.error('Failed to initialize database:', error);
+        if (process.env.VERCEL === '1') {
+          throw new Error(
+            'Database initialization failed in Vercel environment. ' +
+            'This app uses SQLite which cannot write to Vercel\'s read-only filesystem. ' +
+            'Please see VERCEL_DEPLOYMENT_LIMITATIONS.md for solutions.'
+          );
+        }
+        throw error;
+      }
     }
     return databaseInstance;
   }

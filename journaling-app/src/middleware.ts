@@ -9,8 +9,11 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
-        // Allow access to public routes
+        // Allow access to public routes and test endpoints
         if (req.nextUrl.pathname.startsWith('/api/auth') || 
+            req.nextUrl.pathname.startsWith('/api/health') ||
+            req.nextUrl.pathname.startsWith('/api/test-') ||
+            req.nextUrl.pathname.startsWith('/api/debug/') ||
             req.nextUrl.pathname.startsWith('/login') ||
             req.nextUrl.pathname.startsWith('/signup') ||
             req.nextUrl.pathname.startsWith('/welcome') ||
